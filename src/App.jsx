@@ -68,8 +68,8 @@ function App() {
   const updatePivotData = () => {
     if (
       data.length > 0 &&
-      rows.length > 0 &&
-      columns.length > 0 &&
+      rows.length > 0 ||
+      columns.length > 0 ||
       valueFields.length > 0
     ) {
       const result = generatePivotTable(
