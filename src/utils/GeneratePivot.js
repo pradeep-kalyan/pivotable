@@ -8,9 +8,6 @@
  * @returns {Object} - The pivot table data
  */
 export function generatePivotTable(data, headers, rows, columns, valueFields) {
-  // Skip header row
-  const records = data.slice(1);
-
   // Create a map for header indices
   const headerIndices = {};
   headers.forEach((header, idx) => {
@@ -22,94 +19,245 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
     pivotTables: {},
   };
 
-  // Process each value field with its aggregation
+  // Skip processing if we have no data
+  if (!data || data.length <= 1) {
+    return result;
+  }
+
+  // Skip header row if it exists
+  const records = data.slice(1);
+
+  // Get the indices for all dimensions
+  const rowIndices = rows.map((r) => headerIndices[r]);
+  const colIndices = columns.map((c) => headerIndices[c]);
+
+  // Create unique row and column combinations
+  const uniqueRows = new Map();
+  const uniqueCols = new Map();
+
+  // Collect all unique row and column combinations
+  records.forEach((record) => {
+    // Create keys for the row and column combinations
+    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
+    const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
+
+    if (!uniqueRows.has(rowKey)) {
+      uniqueRows.set(
+        rowKey,
+        rowIndices.map((idx) => record[idx])
+      );
+    }
+
+    if (!uniqueCols.has(colKey)) {
+      uniqueCols.set(
+        colKey,
+        colIndices.map((idx) => record[idx])
+      );
+    }
+  });
+
+  // Convert to arrays and sort
+  const sortedUniqueRows = [...uniqueRows.values()].sort((a, b) => {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] < b[i]) return -1;
+      if (a[i] > b[i]) return 1;
+    }
+    return 0;
+  });
+
+  const sortedUniqueCols = [...uniqueCols.values()].sort((a, b) => {
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] < b[i]) return -1;
+      if (a[i] > b[i]) return 1;
+    }
+    return 0;
+  });
+
+  // Create a unified table with all value fields
+  const unifiedTableKey = "unified_table";
+
+  // Initialize data matrix with empty aggregation objects for each value field
+  const dataMatrix = {};
+  sortedUniqueRows.forEach((row) => {
+    const rowKey = JSON.stringify(row);
+    dataMatrix[rowKey] = {};
+
+    sortedUniqueCols.forEach((col) => {
+      const colKey = JSON.stringify(col);
+      dataMatrix[rowKey][colKey] = {};
+
+      // Initialize for each value field
+      valueFields.forEach(({ field, aggregation }) => {
+        dataMatrix[rowKey][colKey][`${field}_${aggregation}`] =
+          initAggregation(aggregation);
+      });
+    });
+
+    // Initialize row totals for each value field
+    dataMatrix[rowKey]["total"] = {};
+    valueFields.forEach(({ field, aggregation }) => {
+      dataMatrix[rowKey]["total"][`${field}_${aggregation}`] =
+        initAggregation(aggregation);
+    });
+  });
+
+  // Initialize column totals
+  dataMatrix["total"] = {};
+  sortedUniqueCols.forEach((col) => {
+    const colKey = JSON.stringify(col);
+    dataMatrix["total"][colKey] = {};
+
+    // Initialize for each value field
+    valueFields.forEach(({ field, aggregation }) => {
+      dataMatrix["total"][colKey][`${field}_${aggregation}`] =
+        initAggregation(aggregation);
+    });
+  });
+
+  // Grand total for each value field
+  dataMatrix["total"]["total"] = {};
+  valueFields.forEach(({ field, aggregation }) => {
+    dataMatrix["total"]["total"][`${field}_${aggregation}`] =
+      initAggregation(aggregation);
+  });
+
+  // Aggregate the data for all value fields
+  records.forEach((record) => {
+    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
+    const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
+
+    // Skip if we don't have valid row or column keys
+    if (!dataMatrix[rowKey] || !dataMatrix[rowKey][colKey]) {
+      return;
+    }
+
+    // Process each value field
+    valueFields.forEach(({ field, aggregation }) => {
+      const valueIndex = headerIndices[field];
+
+      // Skip if we can't find the value field
+      if (valueIndex === undefined) {
+        return;
+      }
+
+      const value = record[valueIndex];
+      const fieldKey = `${field}_${aggregation}`;
+
+      updateAggregation(
+        dataMatrix[rowKey][colKey][fieldKey],
+        value,
+        aggregation
+      );
+      updateAggregation(
+        dataMatrix[rowKey]["total"][fieldKey],
+        value,
+        aggregation
+      );
+      updateAggregation(
+        dataMatrix["total"][colKey][fieldKey],
+        value,
+        aggregation
+      );
+      updateAggregation(
+        dataMatrix["total"]["total"][fieldKey],
+        value,
+        aggregation
+      );
+    });
+  });
+
+  // Convert to final representation (unified table format)
+  const unifiedTable = [];
+
+  // Header row - includes all value fields for each column
+  const headerRow = [...rows];
+
+  // For each column, add all value fields
+  sortedUniqueCols.forEach((col) => {
+    const colLabel = col.join(" - ");
+    valueFields.forEach(({ field, aggregation }) => {
+      headerRow.push(`${colLabel} (${field} ${aggregation})`);
+    });
+  });
+
+  // Add totals for each value field
+  valueFields.forEach(({ field, aggregation }) => {
+    headerRow.push(`Total (${field} ${aggregation})`);
+  });
+
+  unifiedTable.push(headerRow);
+
+  // Data rows
+  sortedUniqueRows.forEach((row) => {
+    const rowKey = JSON.stringify(row);
+    const tableRow = [...row];
+
+    // Add values for each column and value field
+    sortedUniqueCols.forEach((col) => {
+      const colKey = JSON.stringify(col);
+
+      // Add each value field for this column
+      valueFields.forEach(({ field, aggregation }) => {
+        const fieldKey = `${field}_${aggregation}`;
+        tableRow.push(
+          getFinalValue(dataMatrix[rowKey][colKey][fieldKey], aggregation)
+        );
+      });
+    });
+
+    // Add row totals for each value field
+    valueFields.forEach(({ field, aggregation }) => {
+      const fieldKey = `${field}_${aggregation}`;
+      tableRow.push(
+        getFinalValue(dataMatrix[rowKey]["total"][fieldKey], aggregation)
+      );
+    });
+
+    unifiedTable.push(tableRow);
+  });
+
+  // Add totals row
+  const totalsRow = ["Total"];
+  // Fill with empty values for any additional row dimensions
+  for (let i = 1; i < rows.length; i++) {
+    totalsRow.push("");
+  }
+
+  // Add column totals for each value field
+  sortedUniqueCols.forEach((col) => {
+    const colKey = JSON.stringify(col);
+
+    // Add each value field total for this column
+    valueFields.forEach(({ field, aggregation }) => {
+      const fieldKey = `${field}_${aggregation}`;
+      totalsRow.push(
+        getFinalValue(dataMatrix["total"][colKey][fieldKey], aggregation)
+      );
+    });
+  });
+
+  // Add grand totals for each value field
+  valueFields.forEach(({ field, aggregation }) => {
+    const fieldKey = `${field}_${aggregation}`;
+    totalsRow.push(
+      getFinalValue(dataMatrix["total"]["total"][fieldKey], aggregation)
+    );
+  });
+
+  unifiedTable.push(totalsRow);
+
+  // Add the unified table to the result
+  result.pivotTables[unifiedTableKey] = {
+    field: "Multiple Fields",
+    aggregation: "Multiple",
+    table: unifiedTable,
+  };
+
+  // Also generate individual tables for backward compatibility
   valueFields.forEach(({ field, aggregation }) => {
     const tableKey = `${field}_${aggregation}`;
 
-    // Get the indices for all dimensions
-    const rowIndices = rows.map((r) => headerIndices[r]);
-    const colIndices = columns.map((c) => headerIndices[c]);
-    const valueIndex = headerIndices[field];
-
-    // Create unique row and column combinations
-    const uniqueRows = new Map();
-    const uniqueCols = new Map();
-
-    records.forEach((record) => {
-      // Create keys for the row and column combinations
-      const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
-      const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
-
-      if (!uniqueRows.has(rowKey)) {
-        uniqueRows.set(
-          rowKey,
-          rowIndices.map((idx) => record[idx])
-        );
-      }
-
-      if (!uniqueCols.has(colKey)) {
-        uniqueCols.set(
-          colKey,
-          colIndices.map((idx) => record[idx])
-        );
-      }
-    });
-
-    // Convert to arrays and sort
-    const sortedUniqueRows = [...uniqueRows.values()].sort((a, b) => {
-      for (let i = 0; i < a.length; i++) {
-        if (a[i] < b[i]) return -1;
-        if (a[i] > b[i]) return 1;
-      }
-      return 0;
-    });
-
-    const sortedUniqueCols = [...uniqueCols.values()].sort((a, b) => {
-      for (let i = 0; i < a.length; i++) {
-        if (a[i] < b[i]) return -1;
-        if (a[i] > b[i]) return 1;
-      }
-      return 0;
-    });
-
-    // Initialize data matrix with empty aggregation objects
-    const dataMatrix = {};
-    sortedUniqueRows.forEach((row) => {
-      const rowKey = JSON.stringify(row);
-      dataMatrix[rowKey] = {};
-
-      sortedUniqueCols.forEach((col) => {
-        const colKey = JSON.stringify(col);
-        dataMatrix[rowKey][colKey] = initAggregation(aggregation);
-      });
-
-      // Initialize row total
-      dataMatrix[rowKey]["total"] = initAggregation(aggregation);
-    });
-
-    // Initialize column totals
-    dataMatrix["total"] = {};
-    sortedUniqueCols.forEach((col) => {
-      const colKey = JSON.stringify(col);
-      dataMatrix["total"][colKey] = initAggregation(aggregation);
-    });
-
-    // Grand total
-    dataMatrix["total"]["total"] = initAggregation(aggregation);
-
-    // Aggregate the data
-    records.forEach((record) => {
-      const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
-      const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
-      const value = record[valueIndex];
-
-      updateAggregation(dataMatrix[rowKey][colKey], value, aggregation);
-      updateAggregation(dataMatrix[rowKey]["total"], value, aggregation);
-      updateAggregation(dataMatrix["total"][colKey], value, aggregation);
-      updateAggregation(dataMatrix["total"]["total"], value, aggregation);
-    });
-
-    // Convert to final representation (table format)
+    // Create individual table
     const table = [];
 
     // Header row
@@ -128,11 +276,19 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
       // Add values for each column
       sortedUniqueCols.forEach((col) => {
         const colKey = JSON.stringify(col);
-        tableRow.push(getFinalValue(dataMatrix[rowKey][colKey], aggregation));
+        const fieldKey = `${field}_${aggregation}`;
+        tableRow.push(
+          getFinalValue(dataMatrix[rowKey][colKey][fieldKey], aggregation)
+        );
       });
 
       // Add row total
-      tableRow.push(getFinalValue(dataMatrix[rowKey]["total"], aggregation));
+      tableRow.push(
+        getFinalValue(
+          dataMatrix[rowKey]["total"][`${field}_${aggregation}`],
+          aggregation
+        )
+      );
 
       table.push(tableRow);
     });
@@ -147,11 +303,21 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
     // Add column totals
     sortedUniqueCols.forEach((col) => {
       const colKey = JSON.stringify(col);
-      totalsRow.push(getFinalValue(dataMatrix["total"][colKey], aggregation));
+      totalsRow.push(
+        getFinalValue(
+          dataMatrix["total"][colKey][`${field}_${aggregation}`],
+          aggregation
+        )
+      );
     });
 
     // Add grand total
-    totalsRow.push(getFinalValue(dataMatrix["total"]["total"], aggregation));
+    totalsRow.push(
+      getFinalValue(
+        dataMatrix["total"]["total"][`${field}_${aggregation}`],
+        aggregation
+      )
+    );
 
     table.push(totalsRow);
 
@@ -176,19 +342,14 @@ function initAggregation(aggregationType) {
     case "sum":
     case "count":
       return { value: 0 };
-
     case "avg":
       return { sum: 0, count: 0 };
-
     case "min":
       return { value: Infinity };
-
     case "max":
       return { value: -Infinity };
-
     case "distinct":
       return { values: new Set() };
-
     default:
       return { value: 0 };
   }
@@ -215,33 +376,28 @@ function updateAggregation(agg, value, aggregationType) {
         agg.value += numValue;
       }
       break;
-
     case "count":
       agg.value += 1;
       break;
-
     case "avg":
       if (!isNaN(numValue)) {
         agg.sum += numValue;
         agg.count += 1;
       }
       break;
-
     case "min":
       if (!isNaN(numValue) && numValue < agg.value) {
         agg.value = numValue;
       }
       break;
-
     case "max":
       if (!isNaN(numValue) && numValue > agg.value) {
         agg.value = numValue;
       }
       break;
-
     case "distinct":
       // Add the original value to the set
-      agg.values.add(value.toString());
+      agg.values.add(String(value));
       break;
   }
 }
@@ -257,19 +413,14 @@ function getFinalValue(agg, aggregationType) {
     case "sum":
     case "count":
       return agg.value;
-
     case "avg":
       return agg.count > 0 ? agg.sum / agg.count : 0;
-
     case "min":
       return agg.value === Infinity ? 0 : agg.value;
-
     case "max":
       return agg.value === -Infinity ? 0 : agg.value;
-
     case "distinct":
       return agg.values.size;
-
     default:
       return 0;
   }
