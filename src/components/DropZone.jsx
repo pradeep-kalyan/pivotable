@@ -11,26 +11,20 @@ function DropZone({ type, children, onDrop }) {
     }),
   });
 
-  // Visual feedback styles for when dragging over
+  // Visual feedback styles for when dragging over - using teal and sand theme
   const getBorderStyles = () => {
-    if (isOver && canDrop) {
-      switch (type) {
-        case "row":
-          return "ring-4 ring-blue-300 shadow-lg";
-        case "column":
-          return "ring-4 ring-green-300 shadow-lg";
-        default:
-          return "ring-4 ring-purple-300 shadow-lg";
-      }
-    }
-    return "";
+    if (!isOver || !canDrop) return "";
+    
+    const styleMap = {
+      row: "ring-4 ring-teal-300 shadow-lg",
+      column: "ring-4 ring-teal-400 shadow-lg",
+      valueField: "ring-4 ring-sand-300 shadow-lg"
+    };
+    return styleMap[type] || styleMap.valueField;
   };
 
   return (
-    <div
-      ref={drop}
-      className={`transition-all duration-200 rounded-lg ${getBorderStyles()}`}
-    >
+    <div ref={drop} className={`transition-all duration-200 rounded-lg ${getBorderStyles()}`}>
       {children}
     </div>
   );

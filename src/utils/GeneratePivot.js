@@ -38,20 +38,20 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
   // Collect all unique row and column combinations
   records.forEach((record) => {
     // Create keys for the row and column combinations
-    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
-    const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
+    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx] ?? ""));
+    const colKey = JSON.stringify(colIndices.map((idx) => record[idx] ?? ""));
 
     if (!uniqueRows.has(rowKey)) {
       uniqueRows.set(
         rowKey,
-        rowIndices.map((idx) => record[idx])
+        rowIndices.map((idx) => record[idx] ?? "")
       );
     }
 
     if (!uniqueCols.has(colKey)) {
       uniqueCols.set(
         colKey,
-        colIndices.map((idx) => record[idx])
+        colIndices.map((idx) => record[idx] ?? "")
       );
     }
   });
@@ -123,8 +123,8 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
 
   // Aggregate the data for all value fields
   records.forEach((record) => {
-    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx]));
-    const colKey = JSON.stringify(colIndices.map((idx) => record[idx]));
+    const rowKey = JSON.stringify(rowIndices.map((idx) => record[idx] ?? ""));
+    const colKey = JSON.stringify(colIndices.map((idx) => record[idx] ?? ""));
 
     // Skip if we don't have valid row or column keys
     if (!dataMatrix[rowKey] || !dataMatrix[rowKey][colKey]) {
@@ -174,7 +174,10 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
 
   // For each column, add all value fields
   sortedUniqueCols.forEach((col) => {
-    const colLabel = col.join(" - ");
+    // Improve column labels by handling empty values
+    const colValues = col.map((val) => (val === "" ? "(Empty)" : val));
+    const colLabel = colValues.join(" - ");
+
     valueFields.forEach(({ field, aggregation }) => {
       headerRow.push(`${colLabel} (${field} ${aggregation})`);
     });
@@ -190,7 +193,9 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
   // Data rows
   sortedUniqueRows.forEach((row) => {
     const rowKey = JSON.stringify(row);
-    const tableRow = [...row];
+    // Improve row labels by handling empty values
+    const rowValues = row.map((val) => (val === "" ? "(Empty)" : val));
+    const tableRow = [...rowValues];
 
     // Add values for each column and value field
     sortedUniqueCols.forEach((col) => {
@@ -252,82 +257,6 @@ export function generatePivotTable(data, headers, rows, columns, valueFields) {
     aggregation: "Multiple",
     table: unifiedTable,
   };
-
-  // Also generate individual tables for backward compatibility
-  valueFields.forEach(({ field, aggregation }) => {
-    const tableKey = `${field}_${aggregation}`;
-
-    // Create individual table
-    const table = [];
-
-    // Header row
-    const headerRow = [
-      ...rows,
-      ...sortedUniqueCols.map((col) => col.join(" - ")),
-      "Total",
-    ];
-    table.push(headerRow);
-
-    // Data rows
-    sortedUniqueRows.forEach((row) => {
-      const rowKey = JSON.stringify(row);
-      const tableRow = [...row];
-
-      // Add values for each column
-      sortedUniqueCols.forEach((col) => {
-        const colKey = JSON.stringify(col);
-        const fieldKey = `${field}_${aggregation}`;
-        tableRow.push(
-          getFinalValue(dataMatrix[rowKey][colKey][fieldKey], aggregation)
-        );
-      });
-
-      // Add row total
-      tableRow.push(
-        getFinalValue(
-          dataMatrix[rowKey]["total"][`${field}_${aggregation}`],
-          aggregation
-        )
-      );
-
-      table.push(tableRow);
-    });
-
-    // Add totals row
-    const totalsRow = ["Total"];
-    // Fill with empty values for any additional row dimensions
-    for (let i = 1; i < rows.length; i++) {
-      totalsRow.push("");
-    }
-
-    // Add column totals
-    sortedUniqueCols.forEach((col) => {
-      const colKey = JSON.stringify(col);
-      totalsRow.push(
-        getFinalValue(
-          dataMatrix["total"][colKey][`${field}_${aggregation}`],
-          aggregation
-        )
-      );
-    });
-
-    // Add grand total
-    totalsRow.push(
-      getFinalValue(
-        dataMatrix["total"]["total"][`${field}_${aggregation}`],
-        aggregation
-      )
-    );
-
-    table.push(totalsRow);
-
-    // Add this table to the result
-    result.pivotTables[tableKey] = {
-      field,
-      aggregation,
-      table,
-    };
-  });
 
   return result;
 }
@@ -414,7 +343,8 @@ function getFinalValue(agg, aggregationType) {
     case "count":
       return agg.value;
     case "avg":
-      return agg.count > 0 ? agg.sum / agg.count : 0;
+      // Fix: Ensure we don't divide by zero and round to reasonable precision
+      return agg.count > 0 ? Number((agg.sum / agg.count).toFixed(4)) : 0;
     case "min":
       return agg.value === Infinity ? 0 : agg.value;
     case "max":

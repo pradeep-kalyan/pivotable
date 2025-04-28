@@ -1,55 +1,50 @@
-@import url("https://fonts.googleapis.com/css2?family=Audiowide&family=Caveat:wght@400..700&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Dancing+Script:wght@400..700&family=Electrolize&family=Great+Vibes&family=Lavishly+Yours&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Roboto:ital,wght@0,100..900;1,100..900&family=Tangerine:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Audiowide&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-.ly {
-  font-family: "Lavishly Yours", cursive;
-  font-weight: 400;
-  font-style: normal;
+@layer base {
+  html {
+    font-family: "Lato", sans-serif;
+  }
+
+  body {
+    @apply bg-sand-50;
+  }
 }
 
-.ds {
-  font-family: "Dancing Script", cursive;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-style: normal;
-}
+@layer components {
+  .teal-sand-gradient {
+    @apply bg-gradient-to-r from-teal-500 to-sand-400;
+  }
 
-caveat-400 {
-  font-family: "Caveat", cursive;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-style: normal;
-}
+  .teal-button {
+    @apply px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg 
+    transition-colors flex items-center shadow-md font-lato;
+  }
 
-.audio {
-  font-family: "Audiowide", sans-serif;
-  font-weight: 400;
-  font-style: normal;
-}
+  .sand-button {
+    @apply px-4 py-2 bg-sand-400 hover:bg-sand-500 text-sand-900 rounded-lg 
+    transition-colors flex items-center shadow-md font-lato;
+  }
 
-.electro {
-  font-family: "Electrolize", sans-serif;
-  font-weight: 400;
-  font-style: normal;
-}
+  .card {
+    @apply bg-white rounded-lg border border-sand-200 shadow-md overflow-hidden;
+  }
 
-.cp {
-  font-family: "Courier Prime", monospace;
-  font-weight: 400;
-  font-style: normal;
-}
+  .card-header {
+    @apply bg-gradient-to-r from-teal-50 to-sand-100 p-3 border-b border-sand-200;
+  }
 
-.gv {
-  font-family: "Great Vibes", cursive;
-  font-weight: 400;
-  font-style: normal;
-}
+  .table-header {
+    @apply bg-teal-100 text-teal-900 font-semibold;
+  }
 
-.pfd {
-  font-family: "Playfair Display", serif;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-style: normal;
+  .table-row-even {
+    @apply bg-white;
+  }
+
+  .table-row-odd {
+    @apply bg-sand-50;
+  }
 }
