@@ -7,9 +7,18 @@ import DragItem from "./components/DragItem";
 import DropZone from "./components/DropZone";
 import * as XLSX from "xlsx";
 import { generatePivotTable } from "./utils/GeneratePivot";
-import { Upload, ChevronDown, ChevronUp, Download, X, Plus, Loader2 } from "lucide-react";
+import {
+  Upload,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  X,
+  Plus,
+  Loader2,
+  Images,
+} from "lucide-react";
 import PivotTable from "./components/PivotTable";
-
+import { exportToExcel, exportPNG } from "./utils/exports";
 function App() {
   // State management
   const [data, setData] = useState([]);
@@ -27,14 +36,20 @@ function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [sampleData, setSampleData] = useState(null);
 
+  const divRef = React.useRef(null);
+
   // Toggle section visibility
-  const toggleSection = (section) => setOpenSection(openSection === section ? "all" : section);
+  const toggleSection = (section) =>
+    setOpenSection(openSection === section ? "all" : section);
 
   // Process Excel file into usable data
   const processExcelData = (buffer) => {
     const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
     const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1, raw: false });
+    const jsonData = XLSX.utils.sheet_to_json(firstSheet, {
+      header: 1,
+      raw: false,
+    });
 
     if (jsonData.length < 2) throw new Error("File has insufficient data");
 
@@ -47,13 +62,18 @@ function App() {
       if (!headers[i]) continue;
 
       const columnValues = jsonData.slice(1).map((row) => row[i]);
-      const nonEmptyValues = columnValues.filter(v => v !== undefined && v !== null && v !== "");
+      const nonEmptyValues = columnValues.filter(
+        (v) => v !== undefined && v !== null && v !== ""
+      );
 
       if (nonEmptyValues.length === 0) {
         headerTypes[headers[i]] = "string";
       } else {
-        const numericCount = nonEmptyValues.filter(v => !isNaN(parseFloat(v))).length;
-        headerTypes[headers[i]] = numericCount / nonEmptyValues.length > 0.7 ? "numeric" : "string";
+        const numericCount = nonEmptyValues.filter(
+          (v) => !isNaN(parseFloat(v))
+        ).length;
+        headerTypes[headers[i]] =
+          numericCount / nonEmptyValues.length > 0.7 ? "numeric" : "string";
       }
     }
 
@@ -99,7 +119,9 @@ function App() {
         setValueFields([]);
         setPivotData(null);
 
-        toast.success(`Loaded ${result.data.length - 1} rows from "${file.name}"`);
+        toast.success(
+          `Loaded ${result.data.length - 1} rows from "${file.name}"`
+        );
         setIsLoading(false);
       } catch (error) {
         console.error("Error processing file:", error);
@@ -140,7 +162,10 @@ function App() {
     } else if (targetType === "valueField") {
       const defaultAgg = headerTypes[header] === "numeric" ? "sum" : "count";
       if (!valueFields.some((v) => v.field === header)) {
-        setValueFields([...valueFields, { field: header, aggregation: defaultAgg }]);
+        setValueFields([
+          ...valueFields,
+          { field: header, aggregation: defaultAgg },
+        ]);
       }
     }
   };
@@ -159,7 +184,7 @@ function App() {
   // Update aggregation type for a value field
   const updateAggregation = (field, aggregation) => {
     setValueFields(
-      valueFields.map((v) => v.field === field ? { ...v, aggregation } : v)
+      valueFields.map((v) => (v.field === field ? { ...v, aggregation } : v))
     );
   };
 
@@ -170,31 +195,49 @@ function App() {
     }
 
     // Check if this exact field and aggregation combination already exists
-    if (valueFields.some(v => v.field === selectedField && v.aggregation === selectedAggregation)) {
-      return toast.info(`${selectedAggregation} of ${selectedField} is already added`);
+    if (
+      valueFields.some(
+        (v) =>
+          v.field === selectedField && v.aggregation === selectedAggregation
+      )
+    ) {
+      return toast.info(
+        `${selectedAggregation} of ${selectedField} is already added`
+      );
     }
 
-    setValueFields([...valueFields, { field: selectedField, aggregation: selectedAggregation }]);
+    setValueFields([
+      ...valueFields,
+      { field: selectedField, aggregation: selectedAggregation },
+    ]);
     toast.success(`Added ${selectedAggregation} of ${selectedField}`);
   };
 
   // Generate the pivot table
   const generatePivotData = () => {
     if (data.length <= 1) return toast.error("No data available to pivot");
-    if (valueFields.length === 0) return toast.warn("Please add at least one value field");
+    if (valueFields.length === 0)
+      return toast.warn("Please add at least one value field");
 
     setIsAnalyzing(true);
 
     // Use setTimeout to allow the UI to update first
     setTimeout(() => {
       try {
-        const result = generatePivotTable(data, headers, rows, columns, valueFields);
+        const result = generatePivotTable(
+          data,
+          headers,
+          rows,
+          columns,
+          valueFields
+        );
         setPivotData(result);
         setIsAnalyzing(false);
 
         // Scroll to results
         const resultsElement = document.getElementById("pivot-results");
-        if (resultsElement) resultsElement.scrollIntoView({ behavior: "smooth" });
+        if (resultsElement)
+          resultsElement.scrollIntoView({ behavior: "smooth" });
       } catch (error) {
         console.error("Error generating pivot table:", error);
         toast.error(`Failed to generate pivot table: ${error.message}`);
@@ -206,33 +249,9 @@ function App() {
   // Get available aggregation functions based on field type
   const getAvailableAggregations = (fieldName) => {
     if (!fieldName || !headerTypes[fieldName]) return ["count"];
-    return headerTypes[fieldName] === "numeric" 
-      ? ["sum", "avg", "count", "min", "max"] 
+    return headerTypes[fieldName] === "numeric"
+      ? ["sum", "avg", "count", "min", "max"]
       : ["count", "distinct"];
-  };
-
-  // Export data to Excel
-  const exportToExcel = () => {
-    if (!pivotData?.pivotTables) return toast.warn("No pivot data to export");
-
-    try {
-      const workbook = XLSX.utils.book_new();
-
-      // Add each pivot table as a separate sheet
-      Object.entries(pivotData.pivotTables).forEach(([key, tableData]) => {
-        const { field, aggregation, table } = tableData;
-        const sheetName = `${field}_${aggregation}`.slice(0, 31); // Excel sheet names are limited to 31 chars
-        const worksheet = XLSX.utils.aoa_to_sheet(table);
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-      });
-
-      // Write the workbook and trigger download
-      XLSX.writeFile(workbook, "pivot_analysis.xlsx");
-      toast.success("Exported pivot data to Excel");
-    } catch (error) {
-      console.error("Error exporting to Excel:", error);
-      toast.error(`Failed to export: ${error.message}`);
-    }
   };
 
   // Render UI
@@ -261,7 +280,11 @@ function App() {
                   disabled={isLoading}
                 />
                 <button className="teal-button">
-                  {isLoading ? <Loader2 className="animate-spin mr-2" size={18} /> : <Upload className="mr-2" size={18} />}
+                  {isLoading ? (
+                    <Loader2 className="animate-spin mr-2" size={18} />
+                  ) : (
+                    <Upload className="mr-2" size={18} />
+                  )}
                   Upload Excel/CSV
                 </button>
               </div>
@@ -284,7 +307,9 @@ function App() {
                           >
                             {header}
                             {headerTypes[header] === "numeric" && (
-                              <span className="ml-1 text-teal-600 font-normal">(#)</span>
+                              <span className="ml-1 text-teal-600 font-normal">
+                                (#)
+                              </span>
                             )}
                           </th>
                         ))}
@@ -292,10 +317,22 @@ function App() {
                     </thead>
                     <tbody className="bg-white divide-y divide-sand-100">
                       {sampleData.slice(1).map((row, rowIdx) => (
-                        <tr key={rowIdx} className={rowIdx % 2 === 0 ? "table-row-even" : "table-row-odd"}>
+                        <tr
+                          key={rowIdx}
+                          className={
+                            rowIdx % 2 === 0
+                              ? "table-row-even"
+                              : "table-row-odd"
+                          }
+                        >
                           {row.map((cell, cellIdx) => (
-                            <td key={cellIdx} className="px-4 py-2 text-sm text-sand-800 whitespace-nowrap">
-                              {cell !== undefined && cell !== null ? String(cell) : ""}
+                            <td
+                              key={cellIdx}
+                              className="px-4 py-2 text-sm text-sand-800 whitespace-nowrap"
+                            >
+                              {cell !== undefined && cell !== null
+                                ? String(cell)
+                                : ""}
                             </td>
                           ))}
                         </tr>
@@ -304,7 +341,8 @@ function App() {
                   </table>
                 </div>
                 <p className="text-xs text-teal-600 mt-2 text-center">
-                  Showing first {sampleData.length - 1} of {data.length - 1} rows
+                  Showing first {sampleData.length - 1} of {data.length - 1}{" "}
+                  rows
                 </p>
               </div>
             )}
@@ -314,13 +352,17 @@ function App() {
             <>
               {/* Field Configuration Section */}
               <section className="mb-8 card p-6">
-                <div className="flex justify-between items-center mb-6 cursor-pointer" onClick={() => toggleSection("fields")}>
+                <div
+                  className="flex justify-between items-center mb-6 cursor-pointer"
+                  onClick={() => toggleSection("fields")}
+                >
                   <h2 className="text-2xl font-semibold text-teal-700 text-center w-full font-audio">
                     Configure Pivot Fields
-                    {openSection === "fields" ? 
-                      <ChevronUp className="inline-block ml-2 text-teal-600" /> : 
+                    {openSection === "fields" ? (
+                      <ChevronUp className="inline-block ml-2 text-teal-600" />
+                    ) : (
                       <ChevronDown className="inline-block ml-2 text-teal-600" />
-                    }
+                    )}
                   </h2>
                 </div>
 
@@ -329,19 +371,29 @@ function App() {
                     {/* Available fields */}
                     <div className="lg:col-span-4">
                       <div className="bg-sand-50 p-4 rounded-lg border border-sand-200">
-                        <h3 className="font-medium text-teal-700 mb-3 text-center">Available Fields</h3>
+                        <h3 className="font-medium text-teal-700 mb-3 text-center">
+                          Available Fields
+                        </h3>
                         <div className="h-64 overflow-y-auto p-2 grid grid-cols-2 gap-2">
-                          {headers.filter(h => h).map(header => (
-                            <DragItem
-                              key={header}
-                              header={header}
-                              type="field"
-                              moveItem={(h, t) => handleDrop({ header: h, sourceType: "field" }, t)}
-                            />
-                          ))}
+                          {headers
+                            .filter((h) => h)
+                            .map((header) => (
+                              <DragItem
+                                key={header}
+                                header={header}
+                                type="field"
+                                moveItem={(h, t) =>
+                                  handleDrop(
+                                    { header: h, sourceType: "field" },
+                                    t
+                                  )
+                                }
+                              />
+                            ))}
                         </div>
                         <p className="mt-2 text-xs text-teal-600 text-center">
-                          Drag fields to Rows/Columns or double-click to add to Rows
+                          Drag fields to Rows/Columns or double-click to add to
+                          Rows
                         </p>
                       </div>
                     </div>
@@ -351,7 +403,10 @@ function App() {
                       {/* Rows */}
                       <div className="bg-sand-50 p-4 rounded-lg border border-sand-200">
                         <h3 className="font-medium text-teal-700 mb-2">Rows</h3>
-                        <DropZone type="row" onDrop={(item) => handleDrop(item, "row")}>
+                        <DropZone
+                          type="row"
+                          onDrop={(item) => handleDrop(item, "row")}
+                        >
                           <div className="min-h-[80px] p-2 bg-white rounded border border-sand-200">
                             <div className="flex flex-wrap gap-2">
                               {rows.map((row) => (
@@ -359,7 +414,12 @@ function App() {
                                   <DragItem
                                     header={row}
                                     type="row"
-                                    moveItem={(h, t) => handleDrop({ header: h, sourceType: "row" }, t)}
+                                    moveItem={(h, t) =>
+                                      handleDrop(
+                                        { header: h, sourceType: "row" },
+                                        t
+                                      )
+                                    }
                                   />
                                   <button
                                     onClick={() => removeItem("row", row)}
@@ -382,8 +442,13 @@ function App() {
 
                       {/* Columns */}
                       <div className="bg-sand-50 p-4 rounded-lg border border-sand-200">
-                        <h3 className="font-medium text-teal-700 mb-2">Columns</h3>
-                        <DropZone type="column" onDrop={(item) => handleDrop(item, "column")}>
+                        <h3 className="font-medium text-teal-700 mb-2">
+                          Columns
+                        </h3>
+                        <DropZone
+                          type="column"
+                          onDrop={(item) => handleDrop(item, "column")}
+                        >
                           <div className="min-h-[80px] p-2 bg-white rounded border border-sand-200">
                             <div className="flex flex-wrap gap-2">
                               {columns.map((column) => (
@@ -391,7 +456,12 @@ function App() {
                                   <DragItem
                                     header={column}
                                     type="column"
-                                    moveItem={(h, t) => handleDrop({ header: h, sourceType: "column" }, t)}
+                                    moveItem={(h, t) =>
+                                      handleDrop(
+                                        { header: h, sourceType: "column" },
+                                        t
+                                      )
+                                    }
                                   />
                                   <button
                                     onClick={() => removeItem("column", column)}
@@ -414,16 +484,32 @@ function App() {
 
                       {/* Values */}
                       <div className="bg-sand-50 p-4 rounded-lg border border-sand-200">
-                        <h3 className="font-medium text-teal-700 mb-2">Values</h3>
-                        <DropZone type="valueField" onDrop={(item) => handleDrop(item, "valueField")}>
+                        <h3 className="font-medium text-teal-700 mb-2">
+                          Values
+                        </h3>
+                        <DropZone
+                          type="valueField"
+                          onDrop={(item) => handleDrop(item, "valueField")}
+                        >
                           <div className="min-h-[80px] p-2 bg-white rounded border border-sand-200">
                             <div className="flex flex-wrap gap-2">
                               {valueFields.map((vf) => (
-                                <div key={`${vf.field}-${vf.aggregation}`} className="flex items-center">
+                                <div
+                                  key={`${vf.field}-${vf.aggregation}`}
+                                  className="flex items-center"
+                                >
                                   <DragItem
                                     header={`${vf.field} (${vf.aggregation})`}
                                     type="valueField"
-                                    moveItem={(h, t) => handleDrop({ header: vf.field, sourceType: "valueField" }, t)}
+                                    moveItem={(h, t) =>
+                                      handleDrop(
+                                        {
+                                          header: vf.field,
+                                          sourceType: "valueField",
+                                        },
+                                        t
+                                      )
+                                    }
                                   />
                                   <button
                                     onClick={() => removeItem("valueField", vf)}
@@ -460,7 +546,9 @@ function App() {
                                 .map((header) => (
                                   <option key={header} value={header}>
                                     {header}
-                                    {headerTypes[header] === "numeric" ? " (#)" : ""}
+                                    {headerTypes[header] === "numeric"
+                                      ? " (#)"
+                                      : ""}
                                   </option>
                                 ))}
                             </select>
@@ -472,14 +560,18 @@ function App() {
                             </label>
                             <select
                               value={selectedAggregation}
-                              onChange={(e) => setSelectedAggregation(e.target.value)}
+                              onChange={(e) =>
+                                setSelectedAggregation(e.target.value)
+                              }
                               className="w-full rounded-md border border-sand-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                             >
-                              {getAvailableAggregations(selectedField).map((agg) => (
-                                <option key={agg} value={agg}>
-                                  {agg.charAt(0).toUpperCase() + agg.slice(1)}
-                                </option>
-                              ))}
+                              {getAvailableAggregations(selectedField).map(
+                                (agg) => (
+                                  <option key={agg} value={agg}>
+                                    {agg.charAt(0).toUpperCase() + agg.slice(1)}
+                                  </option>
+                                )
+                              )}
                             </select>
                           </div>
 
@@ -529,6 +621,13 @@ function App() {
                         <Download size={18} className="mr-2" />
                         Export to Excel
                       </button>
+                      <button
+                        onClick={() => exportPNG({ divRef })}
+                        className="sand-button ml-4 inline-flex"
+                      >
+                        <Images  size={18} className="mr-2" />
+                        Export to PNG
+                      </button>
                     </h2>
                   </div>
 
@@ -537,6 +636,7 @@ function App() {
                     rows={rows}
                     columns={columns}
                     valueFields={valueFields}
+                    divRef={divRef}
                   />
                 </section>
               )}
